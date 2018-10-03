@@ -1,0 +1,56 @@
+How I Learned to Stop Worrying and Love Kubernetes
+
+The Kubernetes ecosystem, or k8s, is a full five-ring circus.  I have never met
+a technology more confounding, complicated, or central to the future of
+computing in my decades long career.  K8s is said to have the second largest
+community of open source developers of all open source projects, behind only
+the Linux kernel.  I am going to try to write this guide from the perspective
+of someone who knows a lot about writing, building, and deploying software, but
+almost nothing about k8s, because that is what I am.  I am learning as I write
+this.  If you discover anything inaccurate or mistaken here, please do not
+hesitate to correct me and I will update this blog post.
+
+What is k8s?  K8s is an open-source container-orchestration system for
+automating deployment, scaling, and management of containerized applications.
+It originated at Google but is now maintained by an independent foundation
+caleld the Cloud Native Computing Foundation.  Founding members included
+Google, Twitter, Huawei, Intel, Cisco, IBM, Docker, Univa, and VMware.  The
+goal of k8s is to help you manage huge swarms of containerized applications,
+which interact and talk to eachother and persist state and get upgraded and
+downgraded and scaled.
+
+You should consider using k8s if you are:
+* Writing an application which must be scalable
+* Writing an application which must be fault-tolerant
+* Writing an application which is composed of multiple services
+* Writing an application which must support rolling upgrades
+
+First, a glossary of terms:
+
+* Container - an operating-system-level virtualization, allowing the existence of multiple isolated user-space instances.  Docker is a common example of a containerization engine which you can use to run applications in containers.  Applications running inside a container can only see the container's contents and devices assigned to the container.
+* Kubernetes (k8s) - an open-source container orchestration system
+* Docker - a common containerization runtime
+* rkt - a slightly-less-common containerization runtime (produced for CoreOS)
+* minikube - a tool that makes it easy to run k8s locally.  minikube runs a single-node k8s cluster inside a VM on your machine for testing or development.
+* Helm - often called "the k8s package manager", helm is a tool of defining how a k8s application is deployed and upgraded.  If you want to run a k8s friendly application, it is likely you can simply get its "helm chart" and run it using helm.
+* Skaffold - A CLI tool that facilitates continuous development for k8s applications.  
+
+
+# From the Ground Up
+
+The understand k8s, we are going to build a k8s application from the ground up.
+All applications start with a container.  We will make a hello, world
+application in a container, using docker.
+
+
+
+
+
+
+Resources:
+https://kubernetes.io/docs/tasks/tools/install-minikube/
+https://kubernetes.io/docs/tasks/tools/install-kubectl/
+https://github.com/coreos/etcd-operator/blob/master/README.md
+https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
+
+
