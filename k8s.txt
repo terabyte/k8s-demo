@@ -29,6 +29,8 @@ First, a glossary of terms:
 
 * Container - an operating-system-level virtualization, allowing the existence of multiple isolated user-space instances.  Docker is a common example of a containerization engine which you can use to run applications in containers.  Applications running inside a container can only see the container's contents and devices assigned to the container.
 * Kubernetes (k8s) - an open-source container orchestration system
+* Node - a VM or physical machine that serves as a worker for a k8s cluster.  A production k8s cluster should have a minimum of 3 nodes.
+* Master - The master is responsible for managing the cluster's resources.  It schedules applications to run on various nodes, maintains state, scales applications, and rolls out updates
 * Docker - a common containerization runtime
 * rkt - a slightly-less-common containerization runtime (produced for CoreOS)
 * minikube - a tool that makes it easy to run k8s locally.  minikube runs a single-node k8s cluster inside a VM on your machine for testing or development.
@@ -154,14 +156,215 @@ You can see the latest release by checking out https://github.com/kubernetes/min
 
 Once the binary is downloaded, chmod +x and place it on your path (i.e. in ~/bin).
 
+    $ minikube start
+    Starting local Kubernetes v1.10.0 cluster...
+    Starting VM...
+    Downloading Minikube ISO
+    160.27 MB / 160.27 MB [============================================] 100.00% 0s
+    Getting VM IP address...
+    Moving files into cluster...
+    Setting up certs...
+    Connecting to cluster...
+    Setting up kubeconfig...
+    Starting cluster components...
+    Kubectl is now configured to use the cluster.
+    Loading cached images from config file.
 
-Resources:
+All together, the start takes about 2 minutes plus however long it takes to download the image.  You will now see a headless virtualbox running:
+
+    $ ps auxwwwfg | grep VBoxHeadless
+    cmyers   17766 32.7  0.1 3957572 105088 ?      Sl   14:58   8:50  \_ /usr/lib/virtualbox/VBoxHeadless --comment minikube --startvm 36955125-c8c6-4c96-bf63-16251960c40b --vrde config
+
+You can now invoke `kubectl` and it can tell you the version of kubernetes running in your minikube:
+
+    $ kubectl version
+    Client Version: version.Info{Major:"1", Minor:"12+", GitVersion:"v1.12.0-rc.1", GitCommit:"3e4aee86dfaf933f03e052859c0a1f52704d4fef", GitTreeState:"clean", BuildDate:"2018-09-18T21:08:06Z", GoVersion:"go1.10.3", Compiler:"gc", Platform:"linux/amd64"}
+    Server Version: version.Info{Major:"1", Minor:"10", GitVersion:"v1.10.0", GitCommit:"fc32d2f3698e36b93322a3465f63a14e9f0eaead", GitTreeState:"clean", BuildDate:"2018-03-26T16:44:10Z", GoVersion:"go1.9.3", Compiler:"gc", Platform:"linux/amd64"}
+
+You can see the k8s version in the client and server don't match, but they are close enough.  The Client version corresponds with kubectl, while the Server version is the version used by the master in your minikube cluster.
+
+You can use kubectl to get some information about what is going on:
+
+    $ kubectl cluster-info
+    Kubernetes master is running at https://192.168.99.102:8443
+    KubeDNS is running at https://192.168.99.102:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+    To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+    $ kubectl get nodes
+    NAME       STATUS   ROLES    AGE   VERSION
+    minikube   Ready    master   1h    v1.10.0
+
+    $ kubectl get services
+    NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+    kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   1h
+
+    $ kubectl get deployments
+    No resources found.
+
+You can run a proxy that lets you communicate with the master.  By default, the cluster's networking is isolated inside the VM and not visible to your machine.
+
+    $ kubectl proxy &
+    [1] 16710
+    Starting to serve on 127.0.0.1:8001
+    $ curl http://localhost:8001/version
+    {
+      "major": "1",
+      "minor": "10",
+      "gitVersion": "v1.10.0",
+      "gitCommit": "fc32d2f3698e36b93322a3465f63a14e9f0eaead",
+      "gitTreeState": "clean",
+      "buildDate": "2018-03-26T16:44:10Z",
+      "goVersion": "go1.9.3",
+      "compiler": "gc",
+      "platform": "linux/amd64"
+    }
+
+We want to deploy our newly made docker containers to this cluster, however, there is a complexity.  The cluster has a docker registery inside it, which is distinct from your local registery into which our containers were built and tagged.  Publicly available containers will be fetched in either case, but if your container is not yet published, you need to get it into your minikube registery somehow.  You would think the solution would be simple but because running a registery securely is difficult and configuring docker daemons to allow connecting to an insecure registery is also difficult, the solution is actually non-obvious and fragile.  Docker magically understands that "localhost:5000" is ok to be insecure, so we just have to tie it all together so everything sees "localhost:5000" as the same registery.  Time for some port mapping!
+
+
+First, we want to run a registery in our cluster.  I've included the fike kube-registery.yaml in this repo but I got it from a gist [here](https://gist.github.com/coco98/b750b3debc6d517308596c248daf3bb1/raw/6efc11eb8c2dce167ba0a5e557833cc4ff38fa7c/kube-registry.yaml).
+
+*NOTE ABOUT NAMESPACES* This file, `kube-registery.yaml`, creates the registery in a namespace, so it will not show up in your commands by default.  Add `--all-namespaces` to see it after creating it.
+
+    $ kubectl create -f kube-registry.yaml
+    replicationcontroller/kube-registry-v0 created
+    service/kube-registry created
+    daemonset.extensions/kube-registry-proxy created
+    $ kubectl get deployments --all-namespaces
+    NAMESPACE     NAME                   DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+    kube-system   kube-dns               1         1         1            1           2h
+    kube-system   kubernetes-dashboard   1         1         1            1           2h
+
+Let's confirm the cluster can see it:
+
+    $ minikube ssh
+                             _             _
+                _         _ ( )           ( )
+      ___ ___  (_)  ___  (_)| |/')  _   _ | |_      __
+    /' _ ` _ `\| |/' _ `\| || , <  ( ) ( )| '_`\  /'__`\
+    | ( ) ( ) || || ( ) || || |\`\ | (_) || |_) )(  ___/
+    (_) (_) (_)(_)(_) (_)(_)(_) (_)`\___/'(_,__/'`\____)
+
+    $ curl -v http://localhost:5000/
+    > GET / HTTP/1.1
+    > Host: localhost:5000
+    > User-Agent: curl/7.60.0
+    > Accept: */*
+    >
+    < HTTP/1.1 200 OK
+    < Server: nginx/1.11.8
+    < Date: Mon, 08 Oct 2018 22:15:59 GMT
+    < Content-Type: text/plain; charset=utf-8
+    < Content-Length: 0
+    < Connection: keep-alive
+    < Cache-Control: no-cache
+    <
+    $ logout
+
+Next, we set up the port forward so we can see it locally too.  We need to get the full name of the pod running the registery.
+
+   $ kubectl get pods --namespace kube-system
+   NAME                                    READY   STATUS    RESTARTS   AGE
+   etcd-minikube                           1/1     Running   0          2h
+   kube-addon-manager-minikube             1/1     Running   0          2h
+   kube-apiserver-minikube                 1/1     Running   0          2h
+   kube-controller-manager-minikube        1/1     Running   0          2h
+   kube-dns-86f4d74b45-x227s               3/3     Running   0          2h
+   kube-proxy-8pkl2                        1/1     Running   0          2h
+   kube-registry-proxy-7l6rx               1/1     Running   0          25m
+   kube-registry-v0-l6mdc                  1/1     Running   0          25m
+   kube-scheduler-minikube                 1/1     Running   0          2h
+   kubernetes-dashboard-5498ccf677-kjj68   1/1     Running   0          2h
+   storage-provisioner                     1/1     Running   0          2h
+   $ kubectl get po -n kube-system | grep kube-registry-v0 | cut -d' ' -f1
+   kube-registry-v0-l6mdc
+   $ kubectl port-forward -n kube-system $(kubectl get po -n kube-system | grep kube-registry-v0 | cut -d' ' -f1) 5000:5000 &
+   [1] 17820
+   Forwarding from 127.0.0.1:5000 -> 5000
+   Forwarding from [::1]:5000 -> 5000
+   $ curl -v http://localhost:5000/
+   *   Trying ::1...
+   * TCP_NODELAY set
+   * Connected to localhost (::1) port 5000 (#0)
+   > GET / HTTP/1.1
+   > Host: localhost:5000
+   > User-Agent: curl/7.52.1
+   > Accept: */*
+   >
+   Handling connection for 5000
+   < HTTP/1.1 200 OK
+   < Cache-Control: no-cache
+   < Date: Mon, 08 Oct 2018 22:29:01 GMT
+   < Content-Length: 0
+   < Content-Type: text/plain; charset=utf-8
+   <
+   * Curl_http_done: called premature == 0
+   * Connection #0 to host localhost left intact
+
+If you happen to be running on a mac (which I am not) and use docker-machine, there is one more step.  For details, see the original writeup I am cribbing off of by looking [here](https://blog.hasura.io/sharing-a-local-registry-for-minikube-37c7240d0615).
+
+Success!  Now we can push our image to the registery and deploty it to our k8s cluster!
+
+    # Yes, that's right - you literally have to tag the image with the hostname and port of the registery you wish to push to!  global namespaces, awesome!
+    $ docker build . -t localhost:5000/python-server
+    Sending build context to Docker daemon  87.55kB
+    Step 1/5 : FROM python:2
+     ---> 4ee4ea2f0113
+    Step 2/5 : WORKDIR /usr/src/app
+     ---> Using cache
+     ---> e6cf49026690
+    Step 3/5 : COPY server.py ./
+     ---> Using cache
+     ---> d9d21459b0aa
+    Step 4/5 : EXPOSE 8080/tcp
+     ---> Using cache
+     ---> 4aac7f2bb52c
+    Step 5/5 : CMD python ./server.py 8080
+     ---> Using cache
+     ---> 006c4826dc2d
+    Successfully built 006c4826dc2d
+    Successfully tagged localhost:5000/python-server:latest
+    $ docker push localhost:5000/python-server
+    < output is long and snip...>
+    latest: digest: sha256:c146c7d09d88d217c139438799c3ae26f0a8ebe399d4d0251522a3b268d15c96 size: 2636
+    $ kubectl run python-server-run --image=localhost:5000/python-server --port=8080
+    kubectl run --generator=deployment/apps.v1beta1 is DEPRECATED and will be removed in a future version. Use kubectl create instead.
+    deployment.apps/python-server-run created
+    $ kubectl get deployments
+    NAME                DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+    python-server-run   1         1         1            0           31s
+    # wait wait wait....
+    $ kubectl get deployments
+    NAME                DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+    python-server-run   1         1         1            1           1m
+
+
+There you have it, available => 1.  The service is up.  How do we hit our service now?  Just like with the registery, we need to map the port.
+
+    $ kubectl port-forward $(kubectl get po | grep python-server-run | cut -d' ' -f1) 8080:8080 &
+    [2] 26919
+    Forwarding from 127.0.0.1:8080 -> 8080
+    Forwarding from [::1]:8080 -> 8080
+    $ curl http://localhost:8080/
+    Handling connection for 8080
+    Hello, World!
+
+We just built a service from writing python all the way to having it running in a real k8s cluster!
+
+
+
+
+
+
+Resources Used:
+https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/
 https://kubernetes.io/docs/tasks/tools/install-minikube/
 https://kubernetes.io/docs/tasks/tools/install-kubectl/
 https://github.com/kubernetes/minikube/releases
 https://github.com/coreos/etcd-operator/blob/master/README.md
 https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
 https://medium.freecodecamp.org/expose-vs-publish-docker-port-commands-explained-simply-434593dbc9a3
+https://blog.hasura.io/sharing-a-local-registry-for-minikube-37c7240d0615
 
 
 
