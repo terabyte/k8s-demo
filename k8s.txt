@@ -42,15 +42,126 @@ The understand k8s, we are going to build a k8s application from the ground up.
 All applications start with a container.  We will make a hello, world
 application in a container, using docker.
 
+## It's like, just an application, man!
 
+Dependencies:
+* python2
+* curl
 
+Next to this tutorial, you will find server.py.  You can run server.py directly if you have python2 installed, it has no external dependencies.
 
+    $ ./server.py &
+    [1] 5624
+    ('Started http server on port ', 8080)
+    $ curl http://localhost:8080
+    127.0.0.1 - - [05/Oct/2018 16:10:18] "GET / HTTP/1.1" 200 -
+    Hello, World!
+    $ kill %1
+    [1]  + 5624 terminated  ./server.py
+
+That's it, pretty simple!
+
+## Containerize your excitement
+
+Dependencies:
+* Functioning install of Docker
+* curl
+
+Besides this tutorial, you will also find a Dockerfile.  This file is pretty straightforward.  In it, we start with a clean python container that makes python2 available, and we copy in the "hello world" python server.  You can run the server in a container using docker by doing the following:
+
+    docker build -t python-server .
+    docker run -P -it --rm --name python-server-run python-server
+
+The "-it" means run in an interactive terminal.  You could leave that out if you want it to run in the background.  The "-P" means publish our exposed ports.  You could instead explicitly give a port mapping using "-p 8080:8080".  Once the container is running, you can validate the ports by running "docker port python-server-run".  This outputs the randomly chosen port (if you give "-P") or confirms the given port (if you give "-p 8080:X").
+
+Once you determine the mapped port, you can hit it just like when you ran the server without the container.
+In particular, the Dockerfile has to expose the port the server runs on (by default, this is port 8080, but we want that to be configurable in future steps).
+
+Here is the complete demo including shell output:
+
+    $ docker build -t python-server .
+    Sending build context to Docker daemon   55.3kB
+    Step 1/5 : FROM python:2
+     ---> 4ee4ea2f0113
+    Step 2/5 : WORKDIR /usr/src/app
+     ---> e6cf49026690
+    Removing intermediate container b52e6cb8c1cb
+    Step 3/5 : COPY server.py ./
+     ---> d9d21459b0aa
+    Removing intermediate container dcee52383d76
+    Step 4/5 : EXPOSE 8080/tcp
+     ---> Running in c2a88532ea2a
+     ---> 4aac7f2bb52c
+    Removing intermediate container c2a88532ea2a
+    Step 5/5 : CMD python ./server.py 8080
+     ---> Running in 4a90d6c51fc2
+     ---> 006c4826dc2d
+    Removing intermediate container 4a90d6c51fc2
+    Successfully built 006c4826dc2d
+    Successfully tagged python-server:latest
+    $ docker run -P --rm --name python-server-run python-server *
+    [1] 11574
+    $ docker port python-server-run
+    8080/tcp -> 0.0.0.0:32770
+    $ curl http://localhost:32770/
+    Hello, World!
+    10.250.0.1 - - [05/Oct/2018 21:23:53] "GET / HTTP/1.1" 200 -
+    $ docker stop python-server-run
+    python-server-run
+    [1]  + 11574 exit 137   docker run -P --rm --name python-server-run python-server
+
+## Yo dawg, I heard you like containers...
+
+* virtualbox || vmwarefusion || kvm2 || kvm || hyperkit (I used virtualbox)
+* Functioning install of Docker
+
+### Install the World
+
+We will next set up a development environment so we can run k8s stuff locally.  I performed these steps on a standard Debian Linux machine, but I avoided reliance on the package manager for anything that isn't likely to be present on every common Linux distro as well as homebrew.
+
+### Install `kubectl`
+
+`kubectl` is the main command by which you interact with kubernetes clusters.  On debian, you can install it using your package manager, like this:
+
+    sudo apt-get update && sudo apt-get install -y apt-transport-https
+    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+    echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee -a /etc/apt/sources.list.d/kubernetes.list
+    sudo apt-get update
+    sudo apt-get install -y kubectl
+
+On a mac, you can do `brew install kbuernetes-cli`.
+
+Alternately, you can install it as part of the google cloud SDK.  Download the SDK [here](this: https://cloud.google.com/sdk/), then run `gcloud components install kubectl`.
+
+Finally, you could elect to just download a pre-built binary:
+
+Linux: curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+Mac: curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/darwin/amd64/kubectl
+Windows: curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.12.0/bin/windows/amd64/kubectl.exe (replacing v1.12.0 with the latest version)
+
+How does `kubectl` even work, anyways?  Well, when you successfully run minikube or start a cluster with kube-up, a kubeconfig file is created automatically.  On Linux (and probably mac?) this file is in ~/.kube/config, but you hopefully won't have to touch it.
+
+### Minikube
+
+Minikube is a binary tool released by google that uses a "VM Driver" (such as virtualbox) to run a virtual machine which can run your k8s pods inside it, right on your current machine, regardless of OS.  This is the standard way to do k8s development.
+
+You can download the Minikube binaries for v0.30.0 from the following links:
+Linux: https://storage.googleapis.com/minikube/releases/v0.30.0/minikube-linux-amd64
+Mac: https://storage.googleapis.com/minikube/releases/v0.30.0/minikube-darwin-amd64
+Windows: https://storage.googleapis.com/minikube/releases/v0.30.0/minikube-windows-amd64.exe (experimental)
+
+You can see the latest release by checking out https://github.com/kubernetes/minikube/releases - this site also contains sha256 hashes you can verify.
+
+Once the binary is downloaded, chmod +x and place it on your path (i.e. in ~/bin).
 
 
 Resources:
 https://kubernetes.io/docs/tasks/tools/install-minikube/
 https://kubernetes.io/docs/tasks/tools/install-kubectl/
+https://github.com/kubernetes/minikube/releases
 https://github.com/coreos/etcd-operator/blob/master/README.md
 https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
+https://medium.freecodecamp.org/expose-vs-publish-docker-port-commands-explained-simply-434593dbc9a3
+
 
 
