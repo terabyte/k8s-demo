@@ -1,4 +1,4 @@
-How I Learned to Stop Worrying and Love Kubernetes
+# How I Learned to Stop Worrying and Love Kubernetes
 
 The Kubernetes ecosystem, or k8s, is a full five-ring circus.  I have never met
 a technology more confounding, complicated, or central to the future of
@@ -29,8 +29,9 @@ First, a glossary of terms:
 
 * Container - an operating-system-level virtualization, allowing the existence of multiple isolated user-space instances.  Docker is a common example of a containerization engine which you can use to run applications in containers.  Applications running inside a container can only see the container's contents and devices assigned to the container.
 * Kubernetes (k8s) - an open-source container orchestration system
-* Node - a VM or physical machine that serves as a worker for a k8s cluster.  A production k8s cluster should have a minimum of 3 nodes.
-* Master - The master is responsible for managing the cluster's resources.  It schedules applications to run on various nodes, maintains state, scales applications, and rolls out updates
+* node - a VM or physical machine that serves as a worker for a k8s cluster.  A production k8s cluster should have a minimum of 3 nodes.
+* master - The master is responsible for managing the cluster's resources.  It schedules applications to run on various nodes, maintains state, scales applications, and rolls out updates
+* pod - a pod is a k8s abtraction that represents a group of one or more containers and some related shared resources (storage, networking, metadata like ports) for those containers.
 * Docker - a common containerization runtime
 * rkt - a slightly-less-common containerization runtime (produced for CoreOS)
 * minikube - a tool that makes it easy to run k8s locally.  minikube runs a single-node k8s cluster inside a VM on your machine for testing or development.
@@ -351,20 +352,30 @@ There you have it, available => 1.  The service is up.  How do we hit our servic
 
 We just built a service from writing python all the way to having it running in a real k8s cluster!
 
+# Scaling your application...
+
+TODO
+
+# Charting a new Course with Helm...
+
+TODO
+
+# Using `skaffold` to Develop Rapidly
+
+TODO
 
 
 
 
-
-Resources Used:
-https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/
-https://kubernetes.io/docs/tasks/tools/install-minikube/
-https://kubernetes.io/docs/tasks/tools/install-kubectl/
-https://github.com/kubernetes/minikube/releases
-https://github.com/coreos/etcd-operator/blob/master/README.md
-https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
-https://medium.freecodecamp.org/expose-vs-publish-docker-port-commands-explained-simply-434593dbc9a3
-https://blog.hasura.io/sharing-a-local-registry-for-minikube-37c7240d0615
+# Resources Used:
+* https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/
+* https://kubernetes.io/docs/tasks/tools/install-minikube/
+* https://kubernetes.io/docs/tasks/tools/install-kubectl/
+* https://github.com/kubernetes/minikube/releases
+* https://github.com/coreos/etcd-operator/blob/master/README.md
+* https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
+* https://medium.freecodecamp.org/expose-vs-publish-docker-port-commands-explained-simply-434593dbc9a3
+* https://blog.hasura.io/sharing-a-local-registry-for-minikube-37c7240d0615
 
 
 
