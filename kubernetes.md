@@ -1,5 +1,6 @@
 # How I Learned to Stop Worrying and Love Kubernetes
 
+
 The Kubernetes ecosystem, or k8s, is a full five-ring circus.  I have never met
 a technology more confounding, complicated, or central to the future of
 computing in my decades long career.  K8s is said to have the second largest
@@ -36,12 +37,13 @@ First, a glossary of terms:
 * rkt - a slightly-less-common containerization runtime (produced for CoreOS)
 * minikube - a tool that makes it easy to run k8s locally.  minikube runs a single-node k8s cluster inside a VM on your machine for testing or development.
 * Helm - often called "the k8s package manager", helm is a tool of defining how a k8s application is deployed and upgraded.  If you want to run a k8s friendly application, it is likely you can simply get its "helm chart" and run it using helm.
-* Skaffold - A CLI tool that facilitates continuous development for k8s applications.  
-
+* Skaffold - A CLI tool that facilitates continuous development for k8s applications.
+* kubectl - the CLI tool with which you issue commands to a k8s cluster
+* kubeadm - the CLI tool with which you actually start and administer a k8s cluster in production (as opposed to using, e.g. minikube)
 
 # From the Ground Up
 
-The understand k8s, we are going to build a k8s application from the ground up.
+To understand k8s, we are going to build a k8s application from the ground up.
 All applications start with a container.  We will make a hello, world
 application in a container, using docker.
 
@@ -51,7 +53,7 @@ Dependencies:
 * python2
 * curl
 
-Next to this tutorial, you will find server.py.  You can run server.py directly if you have python2 installed, it has no external dependencies.
+Next to this tutorial, you will find the `server` directory containing server.py.  You can run server.py directly if you have python2 installed, it has no external dependencies.
 
     $ ./server.py &
     [1] 5624
@@ -70,7 +72,7 @@ Dependencies:
 * Functioning install of Docker
 * curl
 
-Besides this tutorial, you will also find a Dockerfile.  This file is pretty straightforward.  In it, we start with a clean python container that makes python2 available, and we copy in the "hello world" python server.  You can run the server in a container using docker by doing the following:
+Also in the `server` directory, you will find a Dockerfile.  This file is pretty straightforward.  In it, we start with a clean python container that makes python2 available, and we copy in the "hello world" python server.  You can run the server in a container using docker by doing the following:
 
     docker build -t python-server .
     docker run -P -it --rm --name python-server-run python-server
@@ -352,6 +354,44 @@ There you have it, available => 1.  The service is up.  How do we hit our servic
 
 We just built a service from writing python all the way to having it running in a real k8s cluster!
 
+It turns out, it is considered "bad form" to use a port forward to actually expose a service though.  Instead, you should expose the deployment.
+
+    $ 
+
+## Services Depending on Services
+
+Let's leave aside our `server` app, and instead consider two microservices - `persistence_server` and `hash_server`.  These simple python services represent what might be a database and a front-end web app, respectively.  The persistence server will give a unique integer piece of data each time it is called (persistence is not kept across runs, however, for simplicity's sake - maybe we'll implement that later?).  The `hash_server` will request an integer from the persistence service for each request, then it will run sha256 on it, and return both results.  So here we have a set of interacting services with the following properties:
+
+* There must be exactly one persistence server (if there were two copies, their resutls might conflict)
+* There must be one or more hash servers, they can scale horizontally.
+* Each hash server must be able to find the persistence server
+* External users will want to call the hash server's API.
+
+How do we set this up?  First, let's follow the pattern above and ensure we understand how these services work without containers, and then in raw docker.
+
+    $ ./persistence_server/persistence_server.py 8081 &
+    [1] 12431
+    ('Started http server on port ', 8081)
+    $ ./hash_server/hash_server.py 8080 localhost:8081 &
+    [2] 12722
+    ('Started http server on port ', 8080)
+    $ curl http://localhost:8080/ | tail -n1 | jq
+      % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                     Dload  Upload   Total   Spent    Left  Speed
+      0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0127.0.0.1 - - [16/Oct/2018 18:15:19] "GET / HTTP/1.1" 200 -
+    127.0.0.1 - - [16/Oct/2018 18:15:19] "GET / HTTP/1.1" 200 -
+    100   251    0   251    0     0   130k      0 --:--:-- --:--:-- --:--:--  245k
+    {
+      "data": {
+        "number": 1,
+        "hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+      }
+    }
+    $ echo -n "1" | sha256sum
+    6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b  -
+
+Whelp, looks like all is well!  Good times.  But now, we need to do it in docker, and we need to tell the docker container running the hash server how to find the persistence server.  How does this work?
+
 # Scaling your application...
 
 TODO
@@ -364,8 +404,34 @@ TODO
 
 TODO
 
+# Running your own etcd
 
+If your application depends upon etcd, you will want to run your own (and not use the one that kubernetes is using).  It is a little hard to find references for how to run your own etcd which is not just replacing k8s etcd.
 
+The latest etcd release can be found here: https://github.com/etcd-io/etcd/releases
+
+These releases are built into images available here: https://quay.io/repository/coreos/etcd
+
+As such, once you figure out the latest version (e.g. v3.3.10) you can do this:
+
+    export HostIP="<your ip>"
+    docker run --net=host \
+        -d --name etcd-v3.3.10 \
+        --volume=/tmp/etcd-data:/etcd-data \
+        quay.io/coreos/etcd:v3.3.10 \
+        /usr/local/bin/etcd \
+        --name my-etcd-1 \
+        --data-dir /etcd-data \
+        --listen-client-urls http://0.0.0.0:2379 \
+        --advertise-client-urls http://${HostIP}:2379 \
+        --listen-peer-urls http://0.0.0.0:2380 \
+        --initial-advertise-peer-urls http://${HostIP}:2380 \
+        --initial-cluster my-etcd-1=http://${HostIP}:2380 \
+        --initial-cluster-token my-etcd-token \
+        --initial-cluster-state new \
+        --auto-compaction-retention 1
+
+We can turn this into a docker file, which is included in the "etcd" dir next to this guide.
 
 # Resources Used:
 * https://kubernetes.io/docs/tutorials/kubernetes-basics/create-cluster/cluster-intro/
@@ -376,6 +442,6 @@ TODO
 * https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/
 * https://medium.freecodecamp.org/expose-vs-publish-docker-port-commands-explained-simply-434593dbc9a3
 * https://blog.hasura.io/sharing-a-local-registry-for-minikube-37c7240d0615
-
+* https://www.katacoda.com/courses/kubernetes/
 
 
